@@ -1,13 +1,12 @@
-FROM python:2
+FROM debian:bullseye
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y python-fontforge
+RUN apt update && \
+    apt install -y python3 pip python3-fontforge
 
-COPY requirements.txt ./
+COPY requirements.txt src/main.py /app/
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-ENV PYTHONPATH /usr/local/lib/python2.7/site-packages
-
-CMD [ "/usr/bin/python" ]
+CMD ["python3"]

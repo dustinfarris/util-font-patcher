@@ -1,60 +1,114 @@
-import os
+import argparse
 import fontforge
-
+from pathlib import Path
 from termcolor import colored
-from datetime import datetime
-from parseOpts import parseOpts
 
 
-def adjust(font, attribute, factor):
+def parse_opts() -> dict:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Adjust font line height and other metrics'
+    )
+
+    parser.add_argument(
+        '--input', '-i',
+        required=True,
+        help='Path to the input font file'
+    )
+
+    parser.add_argument(
+        '--outputDir', '-o',
+        default='.',
+        help='Output directory for the patched font (default: current directory)'
+    )
+
+    parser.add_argument(
+        '--factor', '-f',
+        type=float,
+        default=1.3,
+        help='Factor to adjust the font metrics (default: 1.3)'
+    )
+
+    parser.add_argument(
+        '--fontname',
+        default=None,
+        help='Override the fontname (default: append factor to original)'
+    )
+
+    parser.add_argument(
+        '--familyname',
+        default=None,
+        help='Override the family name (default: append factor to original)'
+    )
+
+    parser.add_argument(
+        '--fullname',
+        default=None,
+        help='Override the full name (default: append factor to original)'
+    )
+
+    args = parser.parse_args()
+    return vars(args)  # Convert to dictionary
+
+
+def adjust(font, attribute: str, factor: float) -> None:
     """Adjust an attribute of a font by a given factor."""
     original = getattr(font, attribute)
     new = int(getattr(font, attribute) * factor)
 
-    print("Adjusting {}: {} -> {}".format(
-        colored(attribute, 'yellow', attrs=['bold']),
-        colored(original, 'red'),
-        colored(new, 'green')
-    ))
+    print(f"Adjusting {colored(attribute, 'yellow', attrs=['bold'])}: "
+          f"{colored(original, 'red')} -> {colored(new, 'green')}")
     setattr(font, attribute, new)
 
 
-args = parseOpts()
-font = fontforge.open(args["input"])
+def main() -> None:
+    args = parse_opts()
+    font = fontforge.open(args["input"])
 
-print('')
-for prop in ['os2_winascent', 'os2_typoascent', 'hhea_ascent']:
-    adjust(font, prop, args["factor"])
+    print('')
 
-for prop in ['os2_windescent', 'os2_typodescent', 'hhea_descent']:
-    adjust(font, prop, args["factor"] * 2)
+    # Adjust ascent properties
+    for prop in ['os2_winascent', 'os2_typoascent', 'hhea_ascent']:
+        adjust(font, prop, args["factor"])
 
-for attr in ['fontname', 'familyname', 'fullname']:
-    value = args[attr] or "{} {}".format(getattr(font, attr), args["factor"])
-    setattr(font, attr, value)
+    # Adjust descent properties
+    for prop in ['os2_windescent', 'os2_typodescent', 'hhea_descent']:
+        adjust(font, prop, args["factor"] * 2)
 
-font.copyright = "(c) {} Acme Corp. All Rights Reserved.".format(datetime.now().year)
+    # Set font names
+    for attr in ['fontname', 'familyname', 'fullname']:
+        value = args[attr] or f"{getattr(font, attr)} {args['factor']}"
+        setattr(font, attr, value)
 
-filename, extension = os.path.splitext(os.path.basename(args["input"]))
-newFileName = "{}Patched {}{}".format(filename, args["factor"], extension)
+    # Prepare output filename
+    input_path = Path(args["input"])
+    filename = input_path.stem
+    extension = input_path.suffix
+    new_filename = f"{filename}Patched {args['factor']}{extension}"
 
-print('')
-print(colored('Successfully created patched font:', 'green'))
-print(colored('                         Fontname: ', 'white', attrs=["bold"]) + colored(font.fontname, 'blue'))
-print(colored('                      Family Name: ', 'white', attrs=["bold"]) + colored(font.familyname, 'blue'))
-print(colored('                  Name for Humans: ', 'white', attrs=["bold"]) + colored(font.fullname, 'blue'))
-print('')
+    print('')
+    print(colored('Successfully created patched font:', 'green'))
+    print(f"{colored('                         Fontname: ', 'white', attrs=['bold'])}"
+          f"{colored(font.fontname, 'blue')}")
+    print(f"{colored('                      Family Name: ', 'white', attrs=['bold'])}"
+          f"{colored(font.familyname, 'blue')}")
+    print(f"{colored('                  Name for Humans: ', 'white', attrs=['bold'])}"
+          f"{colored(font.fullname, 'blue')}")
+    print('')
 
-sfnt = {}
-for el in font.sfnt_names:
-    sfnt[el[1]] = el
+    # Update SFNT names
+    sfnt = {el[1]: el for el in font.sfnt_names}
+    sfnt["UniqueID"] = ('English (US)', 'UniqueID', font.fontname)
+    sfnt["Preferred Family"] = ('English (US)', 'Preferred Family', font.familyname)
+    font.sfnt_names = tuple(sfnt.values())
 
-sfnt["UniqueID"] = ('English (US)', 'UniqueID', font.fontname)
-sfnt["Preferred Family"] = ('English (US)', 'Preferred Family', font.familyname)
+    # Save the font
+    output_path = Path(args["outputDir"]) / new_filename
+    font.save(str(output_path))
+    font.generate(str(output_path))
 
-font.sfnt_names = tuple(sfnt.values())
+    print(colored(f'Saved patched font file: {colored(new_filename, "blue")}', 'green'))
 
-font.save(args["outputDir"] + "/" + newFileName)
-font.generate(args["outputDir"] + "/" + newFileName)
 
-print(colored('Saved patched font file: {}'.format(colored(newFileName, 'blue')), 'green'))
+if __name__ == "__main__":
+    main()
